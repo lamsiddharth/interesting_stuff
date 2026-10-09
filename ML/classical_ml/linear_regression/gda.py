@@ -1,3 +1,7 @@
+from sklearn.datasets import load_iris
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
 import numpy as np
 
 # Feature data: each row is one observation and each column is one feature.
@@ -90,12 +94,85 @@ print("Predicted class:", prediction)
 x_new_1 = np.array([75, 155])
 
 # Calculate its density under both class distributions.
-gda0 = gaussian_density(x_new_1, mu0, sigma0)
-gda1 = gaussian_density(x_new_1, mu1, sigma1)
+gda00 = gaussian_density(x_new_1, mu0, sigma0)
+gda01 = gaussian_density(x_new_1, mu1, sigma1)
 
-print("Gaussian density for class 0:", gda0)
-print("Gaussian density for class 1:", gda1)
+print("Gaussian density for class 0:", gda00)
+print("Gaussian density for class 1:", gda01)
 
 # Predict the class with the greater Gaussian density.
-prediction = 0 if gda0 > gda1 else 1
+prediction = 0 if gda00 > gda01 else 1
 print("Predicted class:", prediction)
+
+posterior_0 = prior_0 * gda00 / (prior_0 * gda00 + prior_1 * gda01)
+print("Posterior probability of class 0:", posterior_0)
+
+posterior_1 = prior_1 * gda01 / (prior_0 * gda00 + prior_1 * gda01)
+print("Posterior probability of class 1:", posterior_1)
+
+
+# Load the iris dataset
+iris = load_iris()
+X = iris.data
+y = iris.target
+
+# Split data into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(
+    X,
+    y,
+    test_size=0.2,
+    random_state=42,
+    stratify=y
+)
+
+# Estimate the Gaussian parameters from the training data.
+# Each class stores its mean vector, covariance matrix, and prior probability.
+class_parameters = {}
+
+for class_label in np.unique(y_train):
+    X_class = X_train[y_train == class_label]
+
+    class_parameters[class_label] = {
+        "mean": np.mean(X_class, axis=0),
+        "covariance": np.cov(X_class, rowvar=False, bias=True),
+        "prior": X_class.shape[0] / X_train.shape[0],
+    }
+
+
+def predict_class(x):
+    """Predict the class with the highest Gaussian posterior score."""
+    scores = {}
+
+    for class_label, parameters in class_parameters.items():
+        density = gaussian_density(
+            x,
+            parameters["mean"],
+            parameters["covariance"],
+        )
+
+        # The density is multiplied by the class prior according to Bayes' rule.
+        scores[class_label] = density * parameters["prior"]
+
+    return max(scores, key=scores.get)
+
+predictions = [predict_class(x) for x in X_test]
+
+print("Predictions:", predictions)
+print("True labels:", y_test)
+print("Accuracy:", accuracy_score(y_test, predictions))
+
+# Compare the manual implementation with scikit-learn's QDA implementation.
+# QDA is the matching scikit-learn model because this code estimates a
+# separate covariance matrix for each class.
+sklearn_qda = QuadraticDiscriminantAnalysis(store_covariance=True)
+sklearn_qda.fit(X_train, y_train)
+
+sklearn_predictions = sklearn_qda.predict(X_test)
+sklearn_accuracy = accuracy_score(y_test, sklearn_predictions)
+
+print("Scikit-learn QDA predictions:", sklearn_predictions)
+print("Scikit-learn QDA accuracy:", sklearn_accuracy)
+print(
+    "Predictions match:",
+    np.array_equal(np.asarray(predictions), sklearn_predictions),
+)
